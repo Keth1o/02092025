@@ -1,75 +1,147 @@
-from fastapi import FastAPI, HTTPException, Depends
-from sqlalchemy import create_engine, Column, Integer, String
-from sqlalchemy.orm import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
+import sqlite3
 
-app = FastAPI()
+conn = sqlite3.connect("university.db")
+cursor = conn.cursor()
 
-SQLALCHEMY_DATABASE_URL = "sqlite:///./library.db"
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS students (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    age INTEGER,
+    major TEXT
+);
+""")
 
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
-)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS courses (
+    course_id INTEGER PRIMARY KEY,
+    course_name TEXT NOT NULL,
+    instructor TEXT
+);
+""")
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS enrollments (
+    student_id INTEGER,
+    course_id INTEGER,
+    FOREIGN KEY (student_id) REFERENCES students(id),
+    FOREIGN KEY (course_id) REFERENCES courses(course_id),
+    PRIMARY KEY (student_id, course_id)
+);
+""")
+conn.commit()
+conn.close()
 
 
-class User(Base):
-    __tablename__ = "users"
+def add_student():
+    name = input("Введіть ім'я студента: ")
+    age = int(input("Введіть вік: "))
+    major = input("Введіть спеціальність: ")
 
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=False, nullable=False)
-    email = Column(String, unique=True, nullable=False)
+    conn = sqlite3.connect("university.db")
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO students (name, age, major) VALUES (?, ?, ?)", (name, age, major))
+    conn.commit()
+    conn.close()
+    print("Студента додано!")
 
-Base.metadata.create_all(bind=engine)
 
-def get_db():
-    db = SessionLocal()
+def add_course():
+    course_name = input("Введіть назву курсу: ")
+    instructor = input("Введіть ім'я викладача: ")
+
+    conn = sqlite3.connect("university.db")
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO courses (course_name, instructor) VALUES (?, ?)", (course_name, instructor))
+    conn.commit()
+    conn.close()
+    print("Курс додано!")
+
+def view_students():
+    conn = sqlite3.connect("university.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM students")
+    rows = cursor.fetchall()
+    conn.close()
+
+    print("Список студентів:")
+    for row in rows:
+        print(f"ID: {row[0]}, Ім'я: {row[1]}, Вік: {row[2]}, Спеціальність: {row[3]}")
+
+def view_courses():
+    conn = sqlite3.connect("university.db")
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM courses")
+    rows = cursor.fetchall()
+    conn.close()
+
+    print("Список курсів:")
+    for row in rows:
+        print(f"ID: {row[0]}, Назва: {row[1]}, Викладач: {row[2]}")
+
+def enroll_student():
+    view_students()
+    student_id = int(input("Введіть ID студента: "))
+    view_courses()
+    course_id = int(input("Введіть ID курсу: "))
+
+    conn = sqlite3.connect("university.db")
+    cursor = conn.cursor()
     try:
-        yield db
+        cursor.execute("INSERT INTO enrollments (student_id, course_id) VALUES (?, ?)", (student_id, course_id))
+        conn.commit()
+        print("Студента зареєстровано на курс!")
+    except sqlite3.IntegrityError:
+        print("Студент вже зареєстрований на цей курс!")
     finally:
-        db.close()
+        conn.close()
 
+def students_in_course():
+    view_courses()
+    course_id = int(input("Введіть ID курсу: "))
 
-# /create_user - створює нового користувача
-@app.post("/create_user")
-def add_user(username: str, email: str, db: Session = Depends(get_db)):
-    existing_user = db.query(User).filter(User.email == email).first()
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Такий користувач вже існує")
+    conn = sqlite3.connect("university.db")
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT s.id, s.name, s.major
+    FROM students s
+    JOIN enrollments e ON s.id = e.student_id
+    WHERE e.course_id = ?
+    """, (course_id,))
+    rows = cursor.fetchall()
+    conn.close()
 
-    new_user = User(username=username, email=email)
-    db.add(new_user)
-    db.commit()
-    db.refresh(new_user)
+    print("Студенти на курсі:")
+    for row in rows:
+        print(f"ID: {row[0]}, Ім'я: {row[1]}, Спеціальність: {row[2]}")
 
-    return {
-        "message": "Користувача додано",
-        "user_id": new_user.id,
-        "username": new_user.username,
-        "email": new_user.email
-    }
+def menu():
+    while True:
+        print("Університет")
+        print("1. Додати студента")
+        print("2. Додати курс")
+        print("3. Переглянути студентів")
+        print("4. Переглянути курси")
+        print("5. Зареєструвати студента на курс")
+        print("6. Список студентів на курсі")
+        print("7. Вийти")
 
+        choice = input("Ваш вибір: ")
 
-# /users - список всіх користувачів
-@app.get("/users")
-def get_all_users(db: Session = Depends(get_db)):
-    users = db.query(User).all()
-    return [
-        {"user_id": user.id, "username": user.username, "email": user.email}
-        for user in users
-    ]
-
-
-# /users/{user_id} - інформація про користувача
-@app.get("/users/{user_id}")
-def get_user(user_id: int, db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="Користувача не знайдено")
-
-    return {
-        "user_id": user.id,
-        "username": user.username,
-        "email": user.email
-    }
+        if choice == "1":
+            add_student()
+        elif choice == "2":
+            add_course()
+        elif choice == "3":
+            view_students()
+        elif choice == "4":
+            view_courses()
+        elif choice == "5":
+            enroll_student()
+        elif choice == "6":
+            students_in_course()
+        elif choice == "7":
+            print("Вихід з програми")
+            break
+        else:
+            print("Спробуйте ще раз.")

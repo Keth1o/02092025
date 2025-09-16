@@ -1,0 +1,64 @@
+import sqlite3
+
+conn = sqlite3.connect("university.db")
+cursor = conn.cursor()
+
+cursor.execute("""
+CREATE TABLE products (
+    product_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL,
+    price REAL NOT NULL
+);""")
+
+cursor.execute("""CREATE TABLE customers ( 
+	customer_id INTEGER PRIMARY KEY AUTOINCREMENT, 
+	first_name TEXT NOT NULL, 
+	last_name TEXT NOT NULL, 
+	email TEXT NOT NULL UNIQUE 
+);""")
+
+cursor.execute("""CREATE TABLE orders ( 
+	order_id INTEGER PRIMARY KEY AUTOINCREMENT, 
+	customer_id INTEGER NOT NULL, product_id INTEGER NOT NULL, 
+	quantity INTEGER NOT NULL, order_date DATE NOT NULL, 
+	FOREIGN KEY (customer_id) REFERENCES customers(customer_id), 
+	FOREIGN KEY (product_id) REFERENCES products(product_id) );""")
+
+cursor.execute("""INSERT INTO products (name, category, price)
+VALUES ("Телефон", "телефон", 500),
+("Телеефон", "телефон", 600),
+("Планшет", "планшет", 2000)""")
+
+cursor.execute("""INSERT  INTO customers (first_name, last_name, email)
+VALUES ("АБВ", "АБВ", "abs@gmail.com"), 
+("EGF", "EGF", "egf@gmail.com")""")
+
+cursor.execute("""SELECT SUM (quantity) FROM orders""")
+
+cursor.execute("""SELECT customer_id, first_name, last_name
+FROM customers, orders
+INNER JOIN orders ON customers.customer_id = orders.customer_id
+GROUP BY customers.customer_id, customer.first_name, customer.last_name
+COUNT (order_id) FROM orders AS order_total""")
+
+cursor.execute("""SELECT AVG(order_total)
+FROM (
+    SELECT orders.order_id, SUM(products.price * orders.quantity) AS order_total
+    INNER JOIN products ON orders.product_id = products.product_id
+    GROUP BY o.order_id
+);""")
+
+cursor.execute("""SELECT products.category, COUNT(orders.order_id)
+INNER JOIN products ON orders.product_id = products.product_id
+GROUP BY products.category
+LIMIT 1;""")
+
+cursor.execute("""COUNT (*) FROM products.category""")
+
+cursor.execute("""UPDATE products
+SET price = price * 1.10
+WHERE category = 'телефон';""")
+
+conn.commit()
+conn.close()
